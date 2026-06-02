@@ -1,0 +1,136 @@
+    <row>
+        <panel>
+            <title>Demo: Up (last &gt; previous)</title>
+            <search id="gallery_fsv_demo_up">
+                <query>
+| makeresults count=20
+| streamstats count as n
+| eval _time = relative_time(now(), "-" . (n - 1) . "m@m")
+| eval value = 20 + (n * 2)
+| fields _time value
+| sort 0 _time
+                </query>
+                <earliest>-4h@h</earliest>
+                <latest>now</latest>
+            </search>
+            <viz type="so_BUI_pickulationts.fixed_single_value">
+                <search base="gallery_fsv_demo_up" />
+            </viz>
+            <table>
+                <title>Data</title>
+                <search base="gallery_fsv_demo_up" />
+                <option name="count">20</option>
+                <option name="drilldown">none</option>
+                <option name="sortCol">_time</option>
+                <option name="sortDir">asc</option>
+            </table>
+        </panel>
+        <panel>
+            <title>Demo: Down (last &lt; previous)</title>
+            <search id="gallery_fsv_demo_down">
+                <query>
+| makeresults count=20
+| streamstats count as n
+| eval _time = relative_time(now(), "-" . (n - 1) . "m@m")
+| eval value = 80 - (n * 2)
+| fields _time value
+| sort 0 _time
+                </query>
+                <earliest>-4h@h</earliest>
+                <latest>now</latest>
+            </search>
+            <viz type="so_BUI_pickulationts.fixed_single_value">
+                <search base="gallery_fsv_demo_down" />
+            </viz>
+            <table>
+                <title>Data</title>
+                <search base="gallery_fsv_demo_down" />
+                <option name="count">20</option>
+                <option name="drilldown">none</option>
+                <option name="sortCol">_time</option>
+                <option name="sortDir">asc</option>
+            </table>
+        </panel>
+        <panel>
+            <title>Demo: Flat (last = previous)</title>
+            <search id="gallery_fsv_demo_flat">
+                <query>
+| makeresults count=20
+| streamstats count as n
+| eval _time = relative_time(now(), "-" . (n - 1) . "m@m")
+| eval value = if(n &gt;= 19, 50, 30 + n)
+| fields _time value
+| sort 0 _time
+                </query>
+                <earliest>-4h@h</earliest>
+                <latest>now</latest>
+            </search>
+            <viz type="so_BUI_pickulationts.fixed_single_value">
+                <search base="gallery_fsv_demo_flat" />
+            </viz>
+            <table>
+                <title>Data</title>
+                <search base="gallery_fsv_demo_flat" />
+                <option name="count">20</option>
+                <option name="drilldown">none</option>
+                <option name="sortCol">_time</option>
+                <option name="sortDir">asc</option>
+            </table>
+        </panel>
+    </row>
+    <row>
+        <panel>
+            <title>Demo: Big jump (▲ +20 on last point)</title>
+            <search id="gallery_fsv_demo_jump">
+                <query>
+| makeresults count=20
+| streamstats count as n
+| eval _time = relative_time(now(), "-" . (n - 1) . "m@m")
+| eval value = 25 + n
+| eventstats max(n) as max_n
+| eval value = if(n = max_n, value + 20, value)
+| fields _time value
+| sort 0 _time
+                </query>
+                <earliest>-4h@h</earliest>
+                <latest>now</latest>
+            </search>
+            <viz type="so_BUI_pickulationts.fixed_single_value">
+                <search base="gallery_fsv_demo_jump" />
+            </viz>
+            <table>
+                <title>Data</title>
+                <search base="gallery_fsv_demo_jump" />
+                <option name="count">20</option>
+                <option name="drilldown">none</option>
+                <option name="sortCol">_time</option>
+                <option name="sortDir">asc</option>
+            </table>
+        </panel>
+        <panel>
+            <title>Demo: Steep sparkline (noisy, still up at end)</title>
+            <search id="gallery_fsv_demo_steep">
+                <query>
+| makeresults count=20
+| streamstats count as n
+| eval _time = relative_time(now(), "-" . (n - 1) . "m@m")
+| eval value = 20 + round(random() * 40)
+| fields _time value
+| sort 0 _time
+                </query>
+                <earliest>-4h@h</earliest>
+                <latest>now</latest>
+            </search>
+            <viz type="so_BUI_pickulationts.fixed_single_value">
+                <search base="gallery_fsv_demo_steep" />
+            </viz>
+            <table>
+                <title>Data</title>
+                <search base="gallery_fsv_demo_steep" />
+                <option name="count">20</option>
+                <option name="drilldown">none</option>
+                <option name="sortCol">_time</option>
+                <option name="sortDir">asc</option>
+            </table>
+        </panel>
+    </row>
