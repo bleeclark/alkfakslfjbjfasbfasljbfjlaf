@@ -1,0 +1,694 @@
+echnical Design Document (TDD)
+Risk Anomaly Detection Dashboard — React Application
+Version: 0.1 (draft)
+Status: Proposed
+Audience: Engineering, product, security operations
+Last updated: 2026-06-15
+
+1. Executive summary
+This document describes a React-based Risk Anomaly Detection application that gives security and risk teams a single place to:
+
+Monitor total organizational risk score over configurable date ranges
+Detect and investigate anomalies in risk signals
+Visualize risk concentration via heat maps and breakdown charts
+Drill from executive summary → entity detail → evidence
+The app is designed as a layered dashboard: scorecards at the top, trend + heatmap in the middle, investigation queue at the bottom, with a dedicated entity detail route for deep dives.
+
+2. Problem statement
+Risk data today is fragmented across alerts, entity scores, and time-series metrics. Analysts lack:
+
+A single headline risk number with period-over-period context
+A way to see when risk spiked and what drove it
+Spatial/temporal heat maps showing concentration by entity, category, and time
+A prioritized work queue of anomalies worth investigating
+Without this, teams react to individual alerts instead of managing aggregate risk posture.
+
+3. Goals and non-goals
+Goals
+ID	Goal
+G1
+Display total risk score for any selected date range with delta vs prior period
+G2
+Surface anomalies on time-series charts with configurable sensitivity
+G3
+Provide at least two heat map views (entity × category, time × entity)
+G4
+Support drilldown from any panel to filtered entity detail
+G5
+Load primary dashboard in < 2s on warm cache with 30-day range
+G6
+Work with mock data first, then Splunk/search-backed APIs
+Non-goals (v1)
+Automated remediation / ticketing integration (future phase)
+ML model training UI (backend provides is_anomaly flags)
+Real-time streaming sub-second updates (polling / refresh is acceptable)
+Mobile-native layout (responsive web only)
+4. Personas and user stories
+Personas
+Persona	Needs
+CISO / Risk executive
+Headline score, trend, “are we better or worse?”
+SOC analyst
+Anomaly table, heatmap hotspots, entity drilldown
+Risk engineer
+Score breakdown, baseline vs actual, category composition
+User stories
+ID	Story	Acceptance
+US-1
+As an executive, I select “Last 7 days” and see total risk with % change vs previous 7 days
+KPI updates within 500ms of range change
+US-2
+As an analyst, I see anomaly markers on the risk trend line
+Markers align to timestamps; hover shows score + severity
+US-3
+As an analyst, I click a heatmap cell and see entities in that bucket
+Navigates to filtered anomaly table
+US-4
+As an analyst, I open an entity and see its risk timeline + contributing signals
+Detail page loads score gauge, timeline, signal table
+US-5
+As an engineer, I filter by risk domain (identity, network, endpoint)
+All panels respect global filters
+5. System context
+React App
+Backend / Splunk
+Dashboard UI
+Global State / URL
+Chart Layer
+Risk Summary API
+Anomaly API
+Entity Detail API
+SPL / Saved Searches
+Deployment options
+Mode	Description
+A. Standalone React
+REST/GraphQL backend; good for greenfield
+B. Splunk app page
+@splunk/react-page + saved searches (matches your splunk-one stack)
+C. Dashboard Studio hybrid
+KPI tiles in Studio; full app as custom Splunk page
+Recommendation: Build as a Splunk React page (option B) reusing existing components like LineChart (already supports anomalyMode, anomalySensitivity) and KPI sparkline patterns from your viz gallery.
+
+6. Information architecture
+/risk
+├── /overview          ← main dashboard (default)
+├── /entities/:id      ← entity detail
+└── /anomalies         ← full anomaly work queue (optional v1.1)
+Global chrome (persistent on all pages)
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Risk Anomaly Detection          [Date Range ▼]  [Compare ▼]  [Filters] │
+│  Last refreshed: 2m ago                              [Export] [Refresh]    │
+└──────────────────────────────────────────────────────────────────────────┘
+Global filters (URL-synced):
+
+from, to — ISO date range
+compare — previous_period | none
+severity — critical,high,medium,low
+domain — identity,network,endpoint,cloud,compliance
+owner — team or analyst owner
+7. Page specifications
+7.1 Overview dashboard (/risk/overview)
+Layout wireframe
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ GLOBAL: Date range | Compare | Severity | Domain | Owner                    │
+├──────────────┬──────────────┬──────────────┬───────────────────────────────┤
+│ P1 Total     │ P2 Active    │ P3 Critical  │ P4 MTTD                       │
+│ Risk Score   │ Anomalies    │ / High Count │ (with sparkline)              │
+│ 847 ▲12%     │ 23 (+5)      │ 8 / 15       │ 4.2h                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ P5 Risk Score Over Time (line + anomaly markers + optional threshold band)  │
+│                                                                             │
+├───────────────────────────────┬─────────────────────────────────────────────┤
+│ P6 Heatmap: Entity × Category │ P7 Treemap: Risk by Domain                  │
+│                               │                                             │
+├───────────────────────────────┴─────────────────────────────────────────────┤
+│ P8 Calendar Heatmap: Day × Hour (risk intensity)                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ P9 Anomaly Investigation Table (sortable, sparkline, drilldown)             │
+└─────────────────────────────────────────────────────────────────────────────┘
+Panel catalog
+Panel	Viz type	Primary metric	Drilldown
+P1 Total Risk Score
+KPI + delta badge
+total_risk_score
+→ filtered overview
+P2 Active Anomalies
+KPI + count delta
+anomaly_count
+→ /anomalies
+P3 Critical/High
+Dual KPI or stacked mini-bar
+severity_counts
+→ table filtered by severity
+P4 MTTD
+KPI + sparkline
+mean_time_to_detect_hours
+→ timeline panel
+P5 Risk trend
+Line chart + anomaly overlay
+risk_score time series
+→ entity at point-in-time
+P6 Entity × Category
+Heatmap grid
+avg_risk or anomaly_count
+→ entity list for cell
+P7 Risk by domain
+Treemap
+risk_score by domain
+→ domain filter applied
+P8 Time pattern
+Calendar heatmap (7×24)
+risk_score aggregated
+→ hour/day filter
+P9 Anomaly table
+Data table + inline sparkline
+per-anomaly row
+→ /entities/:id
+7.2 Entity detail (/risk/entities/:entityId)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ← Back   Entity: host-abc-01   Risk: 92 (Critical)   Owner: SecOps-East    │
+├──────────────────────────────┬──────────────────────────────────────────────┤
+│ P10 Entity risk gauge        │ P11 Score breakdown (stacked bar / radar)    │
+│ (vs policy threshold)        │                                              │
+├──────────────────────────────┴──────────────────────────────────────────────┤
+│ P12 Entity risk timeline + anomaly bands + deploy/alert overlays            │
+├──────────────────────────────┬──────────────────────────────────────────────┤
+│ P13 Contributing signals     │ P14 Related entities graph (optional v1.1)   │
+│ (sortable table)             │                                              │
+└──────────────────────────────┴──────────────────────────────────────────────┘
+7.3 Anomaly work queue (/risk/anomalies) — v1.1
+Full-screen version of P9 with bulk actions, saved views, and export. Can ship as “View all” from overview in MVP.
+
+8. Data model
+8.1 Core entities
+// Canonical types (TypeScript interfaces)
+interface DateRange {
+  from: string; // ISO 8601
+  to: string;
+  compare?: 'previous_period' | 'none';
+  timezone: string; // e.g. "America/New_York"
+}
+interface RiskSummary {
+  totalRiskScore: number;
+  previousTotalRiskScore: number;
+  deltaPercent: number;
+  anomalyCount: number;
+  previousAnomalyCount: number;
+  severityCounts: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  meanTimeToDetectHours: number;
+  sparklineMttd: number[]; // last N periods for P4
+}
+interface RiskTimePoint {
+  timestamp: string; // ISO
+  riskScore: number;
+  baselineScore?: number;
+  isAnomaly: boolean;
+  anomalySeverity?: 'critical' | 'high' | 'medium' | 'low';
+  anomalyReason?: string;
+}
+interface HeatmapCell {
+  rowKey: string;   // e.g. entity_id or day-of-week
+  colKey: string;   // e.g. category or hour-of-day
+  value: number;    // risk score or count
+  entityIds?: string[]; // for drilldown
+}
+interface AnomalyRecord {
+  id: string;
+  entityId: string;
+  entityName: string;
+  domain: string;
+  category: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  riskScore: number;
+  deltaFromBaseline: number;
+  firstSeen: string;
+  lastSeen: string;
+  status: 'open' | 'acknowledged' | 'resolved' | 'suppressed';
+  recurrenceCount: number;
+  sparkline: number[]; // mini trend for table
+  evidenceSummary: string;
+  searchLink?: string; // Splunk drilldown URL
+}
+interface EntityDetail {
+  entityId: string;
+  entityName: string;
+  entityType: 'user' | 'host' | 'app' | 'service' | 'account';
+  currentRiskScore: number;
+  threshold: number;
+  owner: string;
+  domain: string;
+  scoreByCategory: Array<{ category: string; score: number }>;
+  timeline: RiskTimePoint[];
+  signals: Array<{
+    signalId: string;
+    name: string;
+    category: string;
+    contribution: number; // weighted points toward total
+    lastObserved: string;
+    severity: string;
+  }>;
+  relatedEntities?: Array<{
+    entityId: string;
+    entityName: string;
+    relationship: string;
+    riskScore: number;
+  }>;
+}
+8.2 SPL / search contract (Splunk mode)
+Each panel maps to a saved search with a documented field contract.
+
+Example: risk trend (P5)
+
+index=risk_summary earliest=$earliest$ latest=$latest$
+| timechart span=1h avg(risk_score) as risk_score
+| join type=left _time [
+    search index=risk_anomalies earliest=$earliest$ latest=$latest$
+    | timechart span=1h count as anomaly_count
+]
+| eval is_anomaly=if(anomaly_count>0, 1, 0)
+Expected fields: _time, risk_score, is_anomaly, optional baseline_score
+
+Example: entity × category heatmap (P6)
+
+index=risk_entity earliest=$earliest$ latest=$latest$
+| stats avg(risk_score) as value count by entity_name risk_category
+Expected fields: entity_name, risk_category, value
+
+9. API design (standalone mode)
+If not Splunk-native, expose REST endpoints mirroring the same contracts:
+
+Endpoint	Method	Returns
+/api/risk/summary
+GET
+RiskSummary
+/api/risk/timeseries
+GET
+RiskTimePoint[]
+/api/risk/heatmap/entity-category
+GET
+HeatmapCell[]
+/api/risk/heatmap/calendar
+GET
+HeatmapCell[] (row=day, col=hour)
+/api/risk/anomalies
+GET
+paginated AnomalyRecord[]
+/api/risk/entities/:id
+GET
+EntityDetail
+/api/risk/breakdown/domain
+GET
+{ domain, score }[]
+Query params (all endpoints): from, to, severity[], domain[], owner
+
+Response envelope:
+
+{
+  "data": { },
+  "meta": {
+    "from": "2026-06-08T00:00:00Z",
+    "to": "2026-06-15T00:00:00Z",
+    "compareFrom": "2026-06-01T00:00:00Z",
+    "compareTo": "2026-06-08T00:00:00Z",
+    "refreshedAt": "2026-06-15T14:32:00Z"
+  }
+}
+10. Frontend architecture
+10.1 Tech stack (aligned with your repo)
+Layer	Choice	Notes
+Framework
+React 18
+Matches splunk-one
+UI kit
+@splunk/react-ui
+Tables, date pickers, layout
+Theming
+@splunk/themes
+Dark/light Splunk consistency
+Charts
+Reuse LineChart, KPI components; add HeatmapGrid
+Your LineChart already has anomaly markers
+Routing
+React Router or Splunk page routes
+State
+URL search params + React Context or Zustand
+Filters must be shareable/bookmarkable
+Data fetching
+TanStack Query
+Cache per date range + filters
+Tables
+TanStack Table
+P9 anomaly queue
+Build
+Webpack (@splunk/webpack-configs)
+Existing monorepo pattern
+10.2 Component tree
+RiskApp
+├── GlobalFilterBar
+│   ├── DateRangePicker
+│   ├── ComparePeriodToggle
+│   └── FilterChips (severity, domain, owner)
+├── OverviewPage
+│   ├── ScorecardRow
+│   │   ├── RiskScoreKpi          (P1)
+│   │   ├── AnomalyCountKpi       (P2)
+│   │   ├── SeverityKpi           (P3)
+│   │   └── MttdKpi               (P4)
+│   ├── RiskTrendChart            (P5) → LineChart anomalyMode="deltaZscore"
+│   ├── TwoColumnRow
+│   │   ├── EntityCategoryHeatmap (P6)
+│   │   └── DomainTreemap         (P7)
+│   ├── CalendarHeatmap           (P8)
+│   └── AnomalyTable              (P9)
+└── EntityDetailPage
+    ├── EntityHeader
+    ├── EntityGauge               (P10)
+    ├── CategoryBreakdown         (P11)
+    ├── EntityTimeline            (P12)
+    ├── SignalTable               (P13)
+    └── RelatedEntityGraph        (P14, optional)
+10.3 Shared panel shell
+Every panel wraps in a consistent shell (your demo page already describes this pattern):
+
+interface PanelShellProps {
+  title: string;
+  status?: 'ok' | 'warning' | 'error' | 'loading';
+  owner?: string;
+  lastUpdated?: string;
+  onDrilldown?: () => void;
+  emptyState?: React.ReactNode;
+  children: React.ReactNode;
+}
+11. Visualization specifications
+11.1 P1 — Total Risk Score (KPI)
+Property	Value
+Type
+Large number + delta badge
+Data
+totalRiskScore, deltaPercent
+Colors
+Green ↓ good, red ↑ bad (invert if “lower is better”)
+Interaction
+Click → scroll to P5
+Empty
+“No risk data in selected range”
+Reuse pattern from your KPI sparkline tiles (NewSingleValue, splunkstuff_kpi_sparkline_studio).
+
+11.2 P5 — Risk trend with anomalies
+Property	Value
+Type
+Line chart
+Series
+Primary: risk_score; optional: baseline_score (dashed)
+Anomaly overlay
+Dots or vertical bands where is_anomaly=true
+Client-side fallback
+anomalyMode: 'deltaZscore', anomalySensitivity: 3 (existing LineChart)
+Threshold
+Optional horizontal band at policy limit
+Hover
+Time, score, baseline, “(anomaly)” label
+Click
+Navigate to anomalies at that timestamp
+11.3 P6 — Entity × Category heatmap
+Property	Value
+Type
+Grid heatmap
+X axis
+Risk categories (Identity, Network, Endpoint, …)
+Y axis
+Top N entities by max risk (default 20)
+Cell color
+Sequential scale: low → high risk
+Cell value
+Numeric score or count
+Interaction
+Hover tooltip; click → filter P9 by entity + category
+Scale cap
+95th percentile cap so one outlier doesn’t flatten the grid
+11.4 P8 — Calendar heatmap (time patterns)
+Property	Value
+Type
+7 rows (Mon–Sun) × 24 cols (hours)
+Value
+Avg or max risk_score in bucket
+Use
+Detect cron jobs, business-hour spikes, off-hours exfil
+Click
+Apply hour/day filter to global state
+11.5 P9 — Anomaly investigation table
+Column	Sortable	Notes
+Severity
+✓
+Badge color
+Entity
+✓
+Link to detail
+Domain
+✓
+Risk score
+✓
+Delta vs baseline
+✓
+First seen
+✓
+Recurrence
+✓
+Count badge
+Trend
+—
+Inline 7-point sparkline
+Status
+✓
+open/ack/resolved
+Actions
+—
+Open in Splunk, acknowledge
+Default sort: severity desc, then delta desc.
+
+12. Anomaly detection logic
+12.1 Detection modes (priority order)
+Mode	Source	When used
+Server-flagged
+is_anomaly from search/ML
+Preferred in production
+Threshold breach
+risk_score > threshold
+Policy-based
+Client z-score
+LineChart deltaZscore
+Demo / fallback when backend has no flags
+Percent change
+pctChange mode
+Volatile metrics
+12.2 Severity mapping
+function mapSeverity(score: number, delta: number): Severity {
+  if (score >= 90 || delta >= 50) return 'critical';
+  if (score >= 70 || delta >= 30) return 'high';
+  if (score >= 40 || delta >= 15) return 'medium';
+  return 'low';
+}
+(Configurable via risk_policy.conf or app settings.)
+
+13. Date range behavior
+Presets
+Preset	from	compare
+Last 24 hours
+now - 24h
+previous 24h
+Last 7 days
+now - 7d
+previous 7d
+Last 30 days
+now - 30d
+previous 30d
+Custom
+user picks
+previous period of equal length
+Rules
+All API calls use the same from/to from URL.
+KPI deltas use compare window automatically.
+Changing range invalidates TanStack Query cache keys: ['risk', 'summary', from, to, filters].
+Display timezone follows user locale; queries use UTC internally.
+14. State management and URL contract
+Example URL:
+
+/risk/overview?from=2026-06-08&to=2026-06-15&compare=previous_period&severity=critical,high&domain=identity
+Param	Type	Default
+from
+ISO date
+7 days ago
+to
+ISO date
+today
+compare
+enum
+previous_period
+severity
+csv
+all
+domain
+csv
+all
+owner
+string
+all
+entity
+string
+— (set by heatmap drilldown)
+15. Drilldown contract
+Every interactive viz emits a standard drilldown payload:
+
+interface DrilldownEvent {
+  sourcePanel: 'P5' | 'P6' | 'P7' | 'P8' | 'P9';
+  action: 'filter' | 'navigate';
+  filters: Partial<GlobalFilters> & {
+    entityId?: string;
+    timestamp?: string;
+    category?: string;
+  };
+  target?: string; // route path
+}
+Examples:
+
+Click heatmap cell → filter: { entityId, category } + scroll to P9
+Click trend anomaly → navigate: /entities/:id?at=timestamp
+Click treemap segment → filter: { domain } on overview
+16. Security and access control
+Concern	Approach
+Authentication
+Splunk session (Splunk app) or SSO (standalone)
+Authorization
+Role-based: risk_viewer, risk_analyst, risk_admin
+Data scoping
+Entity lists filtered by team/owner capability
+Audit
+Log filter changes, exports, acknowledge actions
+PII
+Mask user identifiers in executive view; full detail for analysts
+17. Performance
+Target	Strategy
+First paint < 1.5s
+Code-split routes; lazy-load graph panel
+Range change < 500ms perceived
+Optimistic loading skeletons; parallel fetches
+Heatmap render
+Virtualize rows when > 50 entities
+Time series
+Downsample to max 500 points client-side
+Caching
+TanStack Query staleTime 60s; manual refresh button
+18. Accessibility
+All KPIs expose aria-label with value + delta spoken
+Heatmap cells keyboard-focusable with tooltip on focus
+Color scales include non-color cues (patterns or labels)
+Table supports screen reader column headers
+Minimum contrast 4.5:1 on severity badges
+19. Testing strategy
+Layer	Tool	Coverage
+Unit
+Jest/Vitest
+formatters, severity mapping, date range math
+Component
+React Testing Library
+KPI, heatmap cell click, empty states
+Visual
+Playwright (you already have this)
+Screenshot regression per panel
+Integration
+Playwright
+Date range change updates all panels
+Contract
+JSON schema tests
+API response shape per endpoint
+Fixtures
+riskFixtures.ts
+Mock data before Splunk wiring (your demo page pattern)
+Critical E2E scenarios:
+
+Change date range → P1 and P5 update
+Click P6 cell → P9 filters correctly
+Click anomaly row → entity detail loads
+Empty search results → graceful empty states everywhere
+anomalyMode=deltaZscore marks points when backend sends no flags
+20. Phased delivery
+Phase 1 — MVP (4–6 weeks)
+Global date range + filters (URL-synced)
+P1–P5, P9 (scorecards, trend, anomaly table)
+Mock fixtures + one real Splunk saved search
+Entity detail: P10, P12, P13
+Phase 2 — Heatmaps (2–3 weeks)
+P6 entity × category heatmap
+P8 calendar heatmap
+P7 domain treemap
+Phase 3 — Advanced (3–4 weeks)
+P14 related entity graph
+Anomaly acknowledge workflow
+Export CSV/PDF
+Saved views per user
+21. Mock data fixture (development)
+// riskFixtures.ts — enables UI before backend exists
+export const mockRiskSummary: RiskSummary = {
+  totalRiskScore: 847,
+  previousTotalRiskScore: 756,
+  deltaPercent: 12.0,
+  anomalyCount: 23,
+  previousAnomalyCount: 18,
+  severityCounts: { critical: 8, high: 15, medium: 42, low: 103 },
+  meanTimeToDetectHours: 4.2,
+  sparklineMttd: [5.1, 4.8, 4.5, 4.3, 4.2, 4.0, 3.9],
+};
+export const mockTimeSeries: RiskTimePoint[] = [
+  { timestamp: '2026-06-10T08:00:00Z', riskScore: 720, baselineScore: 700, isAnomaly: false },
+  { timestamp: '2026-06-10T09:00:00Z', riskScore: 890, baselineScore: 705, isAnomaly: true, anomalySeverity: 'high' },
+  // ...
+];
+22. Open questions
+#	Question	Owner	Default if unresolved
+1
+Is risk score 0–100 or unbounded?
+Product
+0–100
+2
+Backend provides is_anomaly or client-only?
+Data eng
+Server preferred, client fallback
+3
+Entity types and cardinality limits?
+Security
+Top 20 in heatmap, paginated table
+4
+Splunk app page vs standalone?
+Eng
+Splunk app page in splunk-one
+5
+Real-time refresh interval?
+Ops
+60s polling + manual refresh
+23. Reuse from your existing codebase
+Existing asset	Use in this app
+LineChart + anomalyMode / anomalySensitivity
+P5 risk trend
+KPI / NewSingleValue patterns
+P1–P4 scorecards
+Demo page fixture pattern (singleValueFeed, mock datasets)
+Phase 1 fixtures
+visualizationPlan heatmap / storyline ideas in demo/index.jsx
+P6, P8, P12 naming and contracts
+@splunk/react-ui + react-page
+App shell and layout
+24. Success metrics
+Metric	Target (90 days post-launch)
+Weekly active analysts
+80% of SOC team
+Mean time to identify top risk entity
+< 2 min (from dashboard)
+False drilldown rate
+< 10% (heatmap cell → irrelevant entities)
+Dashboard load satisfaction
+> 4/5 internal survey
