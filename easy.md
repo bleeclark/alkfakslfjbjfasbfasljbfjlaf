@@ -98,3 +98,134 @@ The app should maintain two filter states:
 - **Applied filters:** values currently driving panels.
 
 Only **Submit** should copy draft filters into applied filters and refresh the panels.
+
+Required loading UI:
+
+- Wait spinner
+- "Running search..." message
+- Dispatch state when available
+- Progress bar when Splunk reports progress
+- Timeout error if the job takes too long
+
+Mock mode may not show loading because fixture data should be available immediately.
+
+## 14. Styling Requirements
+
+The dashboard should feel like a clean operational tool.
+
+Requirements:
+
+- No overlapping controls.
+- No floating overlay for the time picker.
+- Consistent panel gaps.
+- Consistent table header and cell padding.
+- Fixed table layout for even spacing.
+- Compact empty panel sizing.
+- Proportional two-column rows.
+- Cards should use restrained borders and shadows.
+
+## 15. Testing Plan
+
+Add focused tests for:
+
+- Filter dependency clearing.
+- Time range preset serialization.
+- Real-time time range URL round-trip.
+- Advanced time range URL round-trip.
+- Hide empty panels URL round-trip.
+- Splunk token mapping.
+- Invalid entity selection without entity type.
+- Mock severity filtering.
+- Splunk job progress parsing.
+- Search abort behavior.
+- Unknown search handling.
+
+Primary command:
+
+```bash
+yarn test:risk
+```
+
+## 16. Build and Verification Plan
+
+After implementation:
+
+```bash
+yarn test:risk
+yarn build
+yarn verify:risk-dashboard
+```
+
+Expected generated files:
+
+```text
+stage/appserver/static/pages/risk.js
+stage/appserver/templates/risk.html
+```
+
+## 17. Splunk Cache Plan
+
+For visible UI changes, the implementation must update the asset cache key in `risk.html`.
+
+Example:
+
+```text
+page_asset_version = "YYYYMMDDHHMM"
+```
+
+After build:
+
+1. Confirm `stage/appserver/static/pages/risk.js` changed.
+2. Confirm `stage/appserver/templates/risk.html` has the new asset key.
+3. Hard refresh the browser.
+4. Restart Splunk Web if the old bundle is still cached.
+
+## 18. Acceptance Criteria
+
+The work is complete when:
+
+- The Risk page renders without layout gaps.
+- Time range, Business unit, and Severity are on the same row.
+- The time selector opens inline and has Presets, Relative, Real-time, Date Range, and Advanced sections.
+- Submit applies all draft filters.
+- Reset restores defaults.
+- Filters persist in the URL.
+- Panels show spinner/progress in Splunk mode.
+- Empty panels are compact when shown.
+- Empty panels disappear when Hide Empty Panels is enabled.
+- Remaining panels resize proportionally after empty panels are hidden.
+- Tests and build verification pass.
+
+## 19. Implementation Sequence
+
+1. Create or update filter state objects.
+2. Add URL parsing and serialization.
+3. Build the filter card.
+4. Build the inline time range selector.
+5. Build the shared panel shell.
+6. Build table panels.
+7. Build the line chart panel.
+8. Build the domain histogram.
+9. Add mock data support.
+10. Add Splunk REST search support.
+11. Add loading and progress states.
+12. Add hide-empty-panel behavior.
+13. Normalize layout spacing.
+14. Add tests.
+15. Build, verify, and cache-bust.
+
+## 20. Risks
+
+- Splunk static asset caching may show an old bundle after changes.
+- Real-time search tokens may behave differently depending on Splunk configuration.
+- Empty panels can leave blank grid cells if wrappers are not collapsed correctly.
+- Advanced earliest/latest token input should be validated enough to avoid obvious blank values.
+- Splunk REST mode requires a valid Splunk Web session and `splunkd` base URL.
+
+## 21. Open Questions
+
+- Should Hide Empty Panels default to on or off?
+- Should empty panels show a count of why they are empty?
+- Should Advanced time tokens be validated before Submit?
+- Should Splunk mode be exposed as a visible toggle or stay URL-only?
+- Should each panel use separate saved searches or share a combined search result?
