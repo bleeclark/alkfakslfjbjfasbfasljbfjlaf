@@ -1,8 +1,9 @@
-[radial_meter_react]
-label = SplunkStuff - Radial meter (React)
-description = React implementation of the Splunk 9.4 custom visualization tutorial radial meter.
-default_height = 220
-search_fragment = | stats count
+# Paste into: $SPLUNK_HOME/etc/apps/<APP_ID>/default/visualizations.conf
+
+[splunkstuff_kpi_sparkline]
+label = SplunkStuff - KPI + sparkline (JavaScript)
+description = Single value with delta and footer sparkline. Accepts Single Value–like one-metric results or _time + numeric series; optional valueField.
+default_height = 280
+search_fragment = | timechart span=1h avg(my_metric) as value
 supports_drilldown = 0
 supports_trellis = 0
-
