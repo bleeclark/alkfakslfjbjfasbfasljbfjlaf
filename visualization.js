@@ -5,7 +5,7 @@
  */
 define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
     var NS = 'display.visualizations.custom.so_BUI_pickulationts.splunkstuff_kpi_sparkline.';
-    var VIZ_BUILD = '20260730-kpi-sparkline-single-value-compat';
+    var VIZ_BUILD = '20260731-kpi-sparkline-autoscale';
     var DEMO_LABELS = {
         majorLabel: '',
         deltaLabel: '',
@@ -24,6 +24,17 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
         'metric',
         'score',
     ];
+    /** Skip Splunk metadata that looks numeric but is constant (flat sparklines). */
+    var SKIP_VALUE_FIELDS = {
+        _time: true,
+        _span: true,
+        _spandays: true,
+        _si: true,
+        _serial: true,
+        _cd: true,
+        _indextime: true,
+        linecount: true,
+    };
 
     function inlineCaptionStyle(el, textColor) {
         el.style.display = 'block';
@@ -232,33 +243,43 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
         return Math.max(lo, Math.min(hi, n));
     }
 
-    function sparkBounds(minIn, maxIn, values, sparkAuto) {
-        if (truthy(sparkAuto)) {
-            var lo = Infinity;
-            var hi = -Infinity;
-            var i;
-            for (i = 0; i < values.length; i += 1) {
-                var v = Number(values[i]);
-                if (!isFinite(v)) {
-                    continue;
-                }
-                if (v < lo) {
-                    lo = v;
-                }
-                if (v > hi) {
-                    hi = v;
-                }
+    function dataSparkBounds(values) {
+        var lo = Infinity;
+        var hi = -Infinity;
+        var i;
+        for (i = 0; i < values.length; i += 1) {
+            var v = Number(values[i]);
+            if (!isFinite(v)) {
+                continue;
             }
-            if (!isFinite(lo) || !isFinite(hi)) {
-                return { min: 0, max: 100 };
+            if (v < lo) {
+                lo = v;
             }
-            if (lo === hi) {
-                hi = lo + 1;
+            if (v > hi) {
+                hi = v;
             }
-            return { min: lo, max: hi };
         }
+        if (!isFinite(lo) || !isFinite(hi)) {
+            return { min: 0, max: 100 };
+        }
+        if (lo === hi) {
+            hi = lo + 1;
+        }
+        return { min: lo, max: hi };
+    }
+
+    /**
+     * Resolve spark Y scale. Auto when sparkAuto is on, or when min/max are blank
+     * (formatter labels say "blank if auto" — blank + Auto Off previously forced 0–100
+     * and flattened any series outside that range into a straight line).
+     */
+    function sparkBounds(minIn, maxIn, values, sparkAuto) {
         var lo2 = parseFloat(minIn, 10);
         var hi2 = parseFloat(maxIn, 10);
+        var hasManual = isFinite(lo2) || isFinite(hi2);
+        if (truthy(sparkAuto) || !hasManual) {
+            return dataSparkBounds(values);
+        }
         if (!isFinite(lo2)) {
             lo2 = 0;
         }
@@ -405,6 +426,11 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
         return false;
     }
 
+    function isSkippedValueField(name) {
+        var n = normalizeName(name);
+        return !n || !!SKIP_VALUE_FIELDS[n] || n.charAt(0) === '_';
+    }
+
     function pickNumericColumnIndex(rawData) {
         var fields = fieldsList(rawData);
         if (!rawData || !rawData.columns || !fields.length) {
@@ -415,12 +441,16 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
         var best = -1;
         for (h = 0; h < VALUE_FIELD_HINTS.length; h += 1) {
             var hinted = findFieldIndex(fields, VALUE_FIELD_HINTS[h]);
-            if (hinted >= 0 && fieldName(fields, hinted) !== '_time' && columnHasNumber(rawData, hinted)) {
+            if (
+                hinted >= 0 &&
+                !isSkippedValueField(fieldName(fields, hinted)) &&
+                columnHasNumber(rawData, hinted)
+            ) {
                 return hinted;
             }
         }
         for (c = 0; c < rawData.columns.length; c += 1) {
-            if (fieldName(fields, c) === '_time') {
+            if (isSkippedValueField(fieldName(fields, c))) {
                 continue;
             }
             if (columnHasNumber(rawData, c)) {
@@ -948,7 +978,7 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
                 return;
             }
 
-            var sparkAuto = opt('sparkAuto', 'false');
+            var sparkAuto = opt('sparkAuto', 'true');
             var sparkMinRaw = opt('sparkMin', '');
             var sparkMaxRaw = opt('sparkMax', '');
             var scale = sparkBounds(sparkMinRaw, sparkMaxRaw, values, sparkAuto);
