@@ -1,0 +1,518 @@
+# Profile React App — TDD + Jira Stories
+
+**Status:** Partial implementation (scaffold live; live Splunk data and polish remaining)  
+**Last updated:** 2026-07-31  
+**App:** `so_BUI_pickulationts`  
+**Primary page:** `/app/so_BUI_pickulationts/profile`  
+**Related page:** `/app/so_BUI_pickulationts/feedback`  
+**Audience:** Engineering, product, QA, Splunk admins
+
+---
+
+## 1. Purpose
+
+This document is the technical design for a Splunk 9.4 React “Profile” experience inside `so_BUI_pickulationts`. It describes:
+
+1. What was built as the first vertical slice.
+2. The intended full React app shape (tabs, filters, actions, feedback, theming, data).
+3. Jira epics and stories needed to finish the entire app.
+
+The Profile page is a Splunk HTML view that loads a Webpack React bundle:
+
+```text
+stage/appserver/static/pages/profile.js
+```
+
+Feedback is a second HTML view / bundle:
+
+```text
+stage/appserver/static/pages/feedback.js
+```
+
+---
+
+## 2. Goals
+
+- Deliver a React Profile dashboard that feels native in Splunk Web 9.4.
+- Support **Profile** and **Metric** tabs on one page.
+- Drive KPI cards and charts from a **filter Select** (All / Region A / Region B initially).
+- Provide action buttons with distinct behaviors (modal, internal page, external link).
+- Provide a **Feedback** page reachable from Profile actions and app nav.
+- Match visualization navy (`#0B1F3B`) as the full page chrome for Profile/Feedback.
+- Keep the same packaging pattern as other React pages (`pages/` → Webpack → Mako template → view XML → nav).
+- Start with demo feeds; later support Splunk REST searches without changing the UI contract.
+
+## 3. Non-Goals (current phase)
+
+- Replacing Classic Simple XML dashboards (`custom_viz_gallery`, `formatter_cards_94`, etc.).
+- Mounting AMD custom viz (`splunkstuff_kpi_sparkline`) inside React panels.
+- Production feedback persistence (webhook / KV Store / index) — placeholder form only.
+- Final product naming for Action 1 / Action 2 / Action 3 buttons.
+- Dark/light Splunk theme switching beyond an explicit navy page override.
+
+---
+
+## 4. Current User Flow
+
+1. Open **Apps → Splunk Stuff (local dev) → Profile**.
+2. See header **Profile** with logo on the right, navy full-page background.
+3. Switch **Profile** / **Metric** tabs.
+4. On Profile tab:
+   - Choose **Filter** (All / Region A / Region B) → KPI cards + viz update.
+   - **Action 1** opens a modal.
+   - **Action 2** navigates to Feedback.
+   - **Action 3** opens an external URL (new tab).
+5. On Metric tab:
+   - **Metric A** navigates to Feedback.
+   - **Metric B** opens a modal.
+6. On Feedback: enter name/message, Submit (local success message), or **Back to Profile**.
+7. Nav also exposes **Resources** (external collection) and **Documentation** (internal React page).
+
+---
+
+## 5. Architecture
+
+```mermaid
+flowchart TB
+  nav[nav/default.xml]
+  profileView[views/profile.xml]
+  feedbackView[views/feedback.xml]
+  profileTpl[templates/profile.html]
+  feedbackTpl[templates/feedback.html]
+  profileJs[pages/profile.js]
+  feedbackJs[pages/feedback.js]
+  feeds[profileFeeds.js demo data]
+  viz[NewSingleValue / LineChart]
+
+  nav --> profileView
+  nav --> feedbackView
+  profileView --> profileTpl --> profileJs
+  feedbackView --> feedbackTpl --> feedbackJs
+  profileJs --> feeds
+  profileJs --> viz
+  profileJs -->|"Action 2"| feedbackView
+```
+
+### Splunk wiring checklist (per React page)
+
+| Layer | Profile | Feedback |
+|-------|---------|----------|
+| Webpack entry folder | `src/main/webapp/pages/profile/` | `src/main/webapp/pages/feedback/` |
+| View XML | `default/data/ui/views/profile.xml` | `default/data/ui/views/feedback.xml` |
+| Mako template | `appserver/templates/profile.html` | `appserver/templates/feedback.html` |
+| Nav | `<view name="profile" />` | `<view name="feedback" />` |
+| Cache-bust | `?v=` on script in template | same |
+
+**Note:** New views often require Splunk **restart** (or reliable debug/refresh) before they stop 404’ing.
+
+---
+
+## 6. Main Files
+
+| Area | Path |
+|------|------|
+| Profile entry | `src/main/webapp/pages/profile/index.jsx` |
+| Profile styles / layout | `src/main/webapp/pages/profile/ProfileStyles.jsx` |
+| Demo feeds (filter-keyed) | `src/main/webapp/pages/profile/profileFeeds.js` |
+| Feedback entry | `src/main/webapp/pages/feedback/index.jsx` |
+| Profile template | `appserver/templates/profile.html` |
+| Feedback template | `appserver/templates/feedback.html` |
+| Views | `default/data/ui/views/profile.xml`, `feedback.xml` |
+| Nav | `default/data/ui/nav/default.xml` |
+| Shared viz components | `src/main/webapp/components/visualizations/NewSingleValue.jsx`, `LineChart.jsx` |
+
+---
+
+## 7. What Was Built (current slice)
+
+### 7.1 Navigation
+
+- **Profile** — React dashboard (default entry for this feature set).
+- **Feedback** — React feedback form page.
+- **Resources** — `<collection>` of three external links (Splunk 9.4 Docs, Splunk UI, Splunk Dev).
+- **Documentation** — existing internal React page (unchanged).
+
+### 7.2 Profile page shell
+
+- Full-page navy background `#0B1F3B` (theme + injected CSS override).
+- Header row: **Profile** H1 left, SVG logo mark right.
+- `TabBar`: Profile | Metric.
+
+### 7.3 Profile tab
+
+- Toolbar: uppercase **FILTER** label + `Select` (All / Region A / Region B) + `ButtonGroup` of three actions.
+- Three summary KPI cards driven by `profileFeeds[filter].cards`.
+- Three visualization cards driven by `profileFeeds[filter].viz` (`NewSingleValue` ×2 + `LineChart` ×1).
+- Changing filter re-renders cards and charts from the matching feed object.
+
+### 7.4 Metric tab
+
+- Toolbar with Metric A / Metric B buttons.
+- Two viz cards from `metricFeeds` (independent of Profile filter).
+
+| Control | Behavior |
+|---------|----------|
+| Metric A | Navigates to `/app/so_BUI_pickulationts/feedback` |
+| Metric B | Opens Splunk React UI `Modal` |
+
+### 7.5 Actions (as of 2026-07-31)
+
+| Control | Behavior |
+|---------|----------|
+| Action 1 | Opens Splunk React UI `Modal` |
+| Action 2 | Navigates to `/app/so_BUI_pickulationts/feedback` |
+| Action 3 | External link (`https://dev.splunk.com/`) in new tab |
+
+### 7.6 Feedback page
+
+- Same navy shell + header/logo pattern.
+- Name + Feedback fields, Submit → local success `Message`.
+- **Back to Profile** link.
+
+### 7.7 Data (current)
+
+Demo-only JavaScript fixtures in `profileFeeds.js`. No Splunk REST searches yet.
+
+---
+
+## 8. Target Full App (remaining design)
+
+These items complete the “entire React app” beyond the scaffold.
+
+### 8.1 Product / UX
+
+- Rename Action 1 / 2 / 3 and Metric A / B to real product labels.
+- Replace placeholder logo with brand asset (`appserver/static/…`).
+- Finalize Resources URLs and Documentation deep-links.
+- Modal content for Action 1 (copy, CTA, optional secondary action).
+- Feedback success/error UX and optional confirmation step.
+
+### 8.2 Data layer
+
+- Introduce `useProfileData` (mock vs `?data=splunk`) similar to Risk.
+- Map filter tokens → SPL / REST params (region, time range if added).
+- Per-panel loading / error / empty states (`PanelShell`-style).
+- Optional time range control on Profile toolbar.
+
+### 8.3 Quality
+
+- Unit tests for feed selection by filter key.
+- Smoke tests: Profile loads, filter swaps values, Action 1 modal open/close, Action 2 routes to Feedback, Metric A → Feedback, Metric B modal.
+- Cache-bust discipline after every visible JS change (`page_asset_version`).
+- Document restart/refresh when adding views.
+
+### 8.4 Accessibility / polish
+
+- Keyboard focus for modal and toolbar.
+- Contrast check for navy + muted text.
+- Responsive grid breakpoints for cards.
+
+---
+
+## 9. UI Contract (stable for stories)
+
+### Filter keys
+
+| Value | Label |
+|-------|-------|
+| `all` | All |
+| `region_a` | Region A |
+| `region_b` | Region B |
+
+### Feed shape
+
+```js
+{
+  cards: [{ title, value, delta }],
+  viz: [{ subheader, tooltipText, values[], times[] }],
+}
+```
+
+UI must keep working if mock feeds are replaced by Splunk-mapped objects of the same shape.
+
+---
+
+## 10. Build / Deploy / Cache
+
+1. Edit sources under `pages/profile` or `pages/feedback`.
+2. `yarn build` from `packages/splunk-one` (or `yarn start` watch).
+3. Bump `page_asset_version` in the matching Mako template.
+4. Ensure app symlink: `$SPLUNK_HOME/etc/apps/so_BUI_pickulationts` → `stage`.
+5. After **new** views/nav: restart Splunk Web (or debug/refresh) then hard-refresh browser.
+6. Verify URLs (note app id spelling: `so_BUI_pickulationts`):
+
+```text
+http://127.0.0.1:8001/en-US/app/so_BUI_pickulationts/profile
+http://127.0.0.1:8001/en-US/app/so_BUI_pickulationts/feedback
+```
+
+---
+
+## 11. Test Plan (acceptance)
+
+| # | Scenario | Expected |
+|---|----------|----------|
+| T1 | Open Profile | Navy page, Profile header + logo, Profile/Metric tabs |
+| T2 | Filter → Region A | Three cards and three viz update to Region A numbers/series |
+| T3 | Filter → Region B | Same for Region B |
+| T4 | Filter → All | Restores All feed |
+| T5 | Action 1 | Modal opens; Close / Esc / X dismisses |
+| T6 | Action 2 | Lands on Feedback view (nav shows Feedback current) |
+| T7 | Action 3 | New tab to external URL |
+| T8 | Metric tab | Two buttons + two viz cards |
+| T8a | Metric A | Lands on Feedback view |
+| T8b | Metric B | Modal opens; Close / Esc / X dismisses |
+| T9 | Feedback Submit | Success message appears |
+| T10 | Back to Profile | Returns to Profile |
+| T11 | Resources collection | Three external links open |
+| T12 | Hard refresh after cache-bust | New JS loads (`?v=` in template) |
+
+---
+
+## 12. Jira Structure
+
+Suggested hierarchy:
+
+- **Epic A** — Profile React foundation & Splunk packaging  
+- **Epic B** — Profile / Metric dashboard UX  
+- **Epic C** — Actions, modal, Feedback flow  
+- **Epic D** — Theming & visual polish  
+- **Epic E** — Live Splunk data integration  
+- **Epic F** — QA, docs, handoff  
+
+Story points are suggestions (Fibonacci). Priorities assume scaffold already partially shipped.
+
+---
+
+### Epic A — Foundation & packaging
+
+#### PROF-1 — Scaffold Profile React page in Splunk app
+**Type:** Story · **Points:** 5 · **Priority:** Highest  
+
+**Description:** Create Webpack page entry, Mako template, view XML, and nav entry so Profile loads as an HTML React view.
+
+**Acceptance criteria:**
+- [ ] `pages/profile/index.jsx` boots with `@splunk/react-page/18` + `getUserTheme()`.
+- [ ] View `profile` exists and nav link works.
+- [ ] Bundle present at `stage/appserver/static/pages/profile.js`.
+- [ ] Documented URL uses app id `so_BUI_pickulationts`.
+
+#### PROF-2 — Scaffold Feedback React page
+**Type:** Story · **Points:** 3 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Feedback view + template + `pages/feedback` bundle.
+- [ ] Nav includes Feedback.
+- [ ] New view visible after Splunk restart/refresh (documented).
+
+#### PROF-3 — Resources external nav collection + Documentation link
+**Type:** Story · **Points:** 2 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Resources dropdown with ≥3 external links (`target="_blank"`).
+- [ ] Documentation remains an internal view link.
+
+---
+
+### Epic B — Profile / Metric dashboard UX
+
+#### PROF-10 — Profile / Metric tabs
+**Type:** Story · **Points:** 3 · **Priority:** Highest  
+
+**Acceptance criteria:**
+- [ ] TabBar with Profile and Metric.
+- [ ] Tab content swaps without full page reload.
+- [ ] Selected tab is visually clear.
+
+#### PROF-11 — Filter Select drives KPI cards and charts
+**Type:** Story · **Points:** 5 · **Priority:** Highest  
+
+**Acceptance criteria:**
+- [ ] Select options: All, Region A, Region B.
+- [ ] Changing filter updates three KPI cards and three viz from filter-keyed feeds.
+- [ ] No hard VisualizationError; empty data shows empty/safe UI.
+
+#### PROF-12 — Profile toolbar layout (filter + actions)
+**Type:** Story · **Points:** 3 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Single compact toolbar row: filter cluster left, action button group right.
+- [ ] Works on desktop width ≥1100px content and wraps cleanly on narrower widths.
+
+#### PROF-13 — Metric tab panels
+**Type:** Story · **Points:** 3 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Two metric buttons and two cards with visualizations under them.
+- [ ] **Metric A** navigates to Feedback (`/app/so_BUI_pickulationts/feedback`).
+- [ ] **Metric B** opens a Splunk UI Modal (dismiss via Close / X / Escape).
+- [ ] Metric data independent of Profile filter (unless product later requests shared state).
+
+#### PROF-14 — Rename placeholder controls
+**Type:** Story · **Points:** 1 · **Priority:** Low  
+
+**Acceptance criteria:**
+- [ ] Product-provided final labels for Action 1/2/3 and Metric A/B applied in UI and docs.
+
+---
+
+### Epic C — Actions, modal, Feedback
+
+#### PROF-20 — Action 1 opens modal
+**Type:** Story · **Points:** 2 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Action 1 opens Splunk UI Modal.
+- [ ] Close via footer button, header X, and Escape.
+- [ ] Modal copy is editable placeholder until product supplies final content.
+
+#### PROF-21 — Action 2 navigates to Feedback page
+**Type:** Story · **Points:** 2 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Action 2 routes to `/app/so_BUI_pickulationts/feedback`.
+- [ ] Feedback page loads without 404 after packaging/restart.
+
+#### PROF-22 — Action 3 external link
+**Type:** Story · **Points:** 1 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Action 3 opens configured external URL in a new tab.
+- [ ] External-link affordance visible on the button.
+
+#### PROF-23 — Feedback form UX
+**Type:** Story · **Points:** 3 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Name + feedback fields, Submit, Back to Profile.
+- [ ] Success state after submit (local OK for v1).
+- [ ] Validation: empty feedback blocked or warned (product choice).
+
+#### PROF-24 — Persist feedback (follow-on)
+**Type:** Story · **Points:** 5 · **Priority:** Low  
+
+**Acceptance criteria:**
+- [ ] Submissions written to agreed store (KV Store / index / webhook).
+- [ ] Error Message on failure; no silent drop.
+
+---
+
+### Epic D — Theming & visual polish
+
+#### PROF-30 — Navy full-page background matching viz `#0B1F3B`
+**Type:** Story · **Points:** 3 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Profile and Feedback content areas use viz navy end-to-end (not light Splunk page chrome inside content).
+- [ ] KPI/viz cards readable on navy (contrast OK).
+
+#### PROF-31 — Header logo to the right of H1
+**Type:** Story · **Points:** 2 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Logo/mark aligned opposite the page title.
+- [ ] Accessible `aria-label` / alt text.
+- [ ] Swap path documented when brand asset is supplied.
+
+#### PROF-32 — Brand asset swap
+**Type:** Story · **Points:** 1 · **Priority:** Low  
+
+**Acceptance criteria:**
+- [ ] Static logo file under `appserver/static` referenced from header.
+- [ ] Cache-bust static asset if needed.
+
+---
+
+### Epic E — Live Splunk data
+
+#### PROF-40 — Profile data hook (mock + Splunk mode)
+**Type:** Story · **Points:** 8 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Default mock feeds for local/dev.
+- [ ] `?data=splunk` (or equivalent) runs REST searches.
+- [ ] UI continues to consume the same card/viz shape.
+
+#### PROF-41 — Filter → SPL / token mapping
+**Type:** Story · **Points:** 5 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] Region (and future filters) map to search tokens.
+- [ ] Documented example SPL per panel.
+
+#### PROF-42 — Panel loading / empty / error states
+**Type:** Story · **Points:** 5 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Spinner/progress while search runs.
+- [ ] Empty and error states do not blank the whole page.
+
+#### PROF-43 — Optional time range on Profile
+**Type:** Story · **Points:** 5 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Time control affects Splunk-backed panels after apply/submit model agreed with product.
+
+---
+
+### Epic F — QA, docs, handoff
+
+#### PROF-50 — Automated smoke tests for Profile/Feedback
+**Type:** Story · **Points:** 5 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] Tests cover filter feed selection and critical navigation (modal / feedback route) at least in unit/integration form.
+- [ ] CI or `package.json` script documented.
+
+#### PROF-51 — Developer / QA handoff doc
+**Type:** Story · **Points:** 2 · **Priority:** Medium  
+
+**Acceptance criteria:**
+- [ ] This TDD linked from README or DEV doc.
+- [ ] Cache-bust + restart notes for new views included.
+- [ ] Correct app id spelling called out (`pickulationts`).
+
+#### PROF-52 — UAT pass against §11 test plan
+**Type:** Story · **Points:** 3 · **Priority:** High  
+
+**Acceptance criteria:**
+- [ ] T1–T12 signed off (or waivers recorded).
+- [ ] Known issues listed (e.g. placeholder feedback persistence).
+
+---
+
+## 13. Suggested sprint sequencing
+
+| Sprint | Focus | Stories |
+|--------|--------|---------|
+| 1 | Foundation + shell UX | PROF-1, PROF-2, PROF-3, PROF-10, PROF-11, PROF-12, PROF-30, PROF-31 |
+| 2 | Actions + Feedback | PROF-13, PROF-20, PROF-21, PROF-22, PROF-23, PROF-51 |
+| 3 | Live data | PROF-40, PROF-41, PROF-42 |
+| 4 | Polish + UAT | PROF-14, PROF-24, PROF-32, PROF-43, PROF-50, PROF-52 |
+
+---
+
+## 14. Open decisions (for product)
+
+1. Final labels for Action 1 / 2 / 3 and Metric A / B.
+2. Final Action 1 / Metric B modal content and CTA.
+3. Final Action 3 (and Resources) URLs.
+4. Brand logo asset.
+5. Feedback persistence target (KV Store vs index vs external).
+6. Whether Metric tab should share Profile filter state.
+7. Whether time range belongs on Profile v1 or later.
+
+---
+
+## 15. Status vs this TDD
+
+| Area | Status |
+|------|--------|
+| Profile/Feedback packaging + nav | Done (scaffold) |
+| Tabs, filter feeds, toolbar, navy theme, logo mark | Done (scaffold) |
+| Action 1 modal / Action 2 Feedback / Action 3 external | Done (scaffold) |
+| Metric A → Feedback / Metric B modal | Done (scaffold) |
+| Feedback form placeholder | Done |
+| Live Splunk data / loading states | Not started |
+| Final copy, brand asset, persistence | Not started |
+| Automated tests + UAT sign-off | Not started |
