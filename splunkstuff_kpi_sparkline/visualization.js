@@ -5,7 +5,7 @@
  */
 define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
     var NS = 'display.visualizations.custom.so_BUI_pickulationts.splunkstuff_kpi_sparkline.';
-    var VIZ_BUILD = '20260731-kpi-sparkline-frame-137';
+    var VIZ_BUILD = '20260803-kpi-sparkline-series-fix';
     /** Layout budget: 35px subheader + 137px body = 172px panel default_height. */
     var SUBHEADER_HEIGHT_PX = 35;
     var BODY_FRAME_HEIGHT_PX = 137;
@@ -968,8 +968,19 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             }
 
             this.el.innerHTML = '';
-            var values = (data && data.values) || [];
-            var times = (data && data.times) || [];
+            var valueField = String(opt('valueField', 'auto') || 'auto').trim() || 'auto';
+            var rawData = data && data.rawData ? data.rawData : null;
+            var series =
+                rawData && rawData.columns
+                    ? buildSeriesFromRaw(rawData, valueField)
+                    : {
+                          values: (data && data.values) || [],
+                          times: (data && data.times) || [],
+                          fieldName: (data && data.fieldName) || '',
+                          stringFields: (data && data.stringFields) || {},
+                      };
+            var values = series.values || [];
+            var times = series.times || [];
             var emptyText = String(opt('emptyText', 'No numeric results to display.') || '');
 
             if (values.length === 0) {
