@@ -41,4 +41,4 @@ Single Value–like:
 
 ## Formatter highlights
 
-Value field, spark scale (min/max/auto), trend colors + invert, headline (unit, precision, delta mode), spark line toggle/stroke, target line, threshold band, empty text.
+Value field, spark scale (min/max/auto), trend colors + invert, headline (unit, precision, delta mode, **major value font size**), spark line toggle/stroke, target line, threshold band, empty text.
