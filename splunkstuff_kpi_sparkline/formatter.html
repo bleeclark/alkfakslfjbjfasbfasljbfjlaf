@@ -1,6 +1,6 @@
 <!--
   BGDHamp — KPI + sparkline (extended formatter)
-  formatter-build: 20260817-kpi-spark-panel-h
+  formatter-build: 20260819-kpi-options-audit
 
   {{VIZ_NAMESPACE}} → display.visualizations.custom.<app_id>.splunkstuff_kpi_sparkline
 -->
@@ -56,6 +56,9 @@
             <option value="right">Right of value</option>
         </splunk-radio-input>
     </splunk-control-group>
+    <div style="font-size: 11px; color: #666; margin: -6px 0 8px 0;">
+        Right of value puts the Major/Delta labels beside the numbers. If those labels are blank, the delta sits to the right of the KPI instead.
+    </div>
     <splunk-control-group label="Subheader style">
         <splunk-radio-input name="{{VIZ_NAMESPACE}}.subheaderStyle" value="matchTile">
             <option value="matchTile">Match tile color</option>
