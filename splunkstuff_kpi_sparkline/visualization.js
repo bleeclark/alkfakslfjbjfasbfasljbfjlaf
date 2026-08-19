@@ -5,7 +5,7 @@
  */
 define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
     var NS = 'display.visualizations.custom.so_BUI_pickulationts.splunkstuff_kpi_sparkline.';
-    var VIZ_BUILD = '20260819-kpi-options-audit';
+    var VIZ_BUILD = '20260819-kpi-headline-row';
     /** Layout budget: 35px subheader + 137px body = 172px panel default_height. */
     var SUBHEADER_HEIGHT_PX = 35;
     var BODY_FRAME_HEIGHT_PX = 137;
@@ -89,8 +89,39 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             }
             pair.appendChild(valueEl);
         }
+        pair.style.setProperty('width', 'auto', 'important');
+        pair.style.setProperty('max-width', 'none', 'important');
+        pair.style.setProperty('flex', '0 0 auto', 'important');
         container.appendChild(pair);
         return pair;
+    }
+
+    function shrinkToContent(el) {
+        if (!el) {
+            return;
+        }
+        el.style.setProperty('display', 'inline-flex', 'important');
+        el.style.setProperty('width', 'auto', 'important');
+        el.style.setProperty('max-width', 'none', 'important');
+        el.style.setProperty('min-width', '0', 'important');
+        el.style.setProperty('flex', '0 0 auto', 'important');
+        el.style.setProperty('box-sizing', 'border-box', 'important');
+    }
+
+    function applyHeadlineRowLayout(row, isInline) {
+        if (!row) {
+            return;
+        }
+        row.style.setProperty('display', 'flex', 'important');
+        row.style.setProperty('flex-direction', isInline ? 'row' : 'column', 'important');
+        row.style.setProperty('flex-wrap', isInline ? 'nowrap' : 'nowrap', 'important');
+        row.style.setProperty('align-items', isInline ? 'baseline' : 'center', 'important');
+        row.style.setProperty('justify-content', 'center', 'important');
+        row.style.setProperty('gap', isInline ? '16px' : '8px', 'important');
+        row.style.setProperty('width', isInline ? 'auto' : '100%', 'important');
+        row.style.setProperty('max-width', '100%', 'important');
+        row.style.setProperty('white-space', isInline ? 'nowrap' : 'normal', 'important');
+        row.style.setProperty('text-align', 'center', 'important');
     }
 
     function inlineBadgeStyle(el) {
@@ -1084,11 +1115,14 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             }
 
             function isInlineHeadline(raw) {
-                var s = String(raw == null ? '' : raw)
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[_-]+/g, ' ');
-                return s === 'inline' || s === 'side by side' || s === 'sidebyside';
+                var t = compactToken(raw);
+                return (
+                    t === 'inline' ||
+                    t === 'sidebyside' ||
+                    t === 'side' ||
+                    t === 'row' ||
+                    t === 'horizontal'
+                );
             }
 
             function isLabelRight(raw) {
@@ -1192,8 +1226,7 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             majorFontSizePx = Math.max(10, Math.min(96, majorFontSizePx));
             var labelPositionRaw = opt('labelPosition', 'above');
             var labelPosition = isLabelRight(labelPositionRaw) ? 'right' : 'above';
-            var headlineIsInline =
-                isInlineHeadline(headlineLayoutRaw) || (labelPosition === 'right' && !majorLabel && !deltaLabel);
+            var headlineIsInline = isInlineHeadline(headlineLayoutRaw);
             var sparkEdgeToEdge = truthy(opt('sparkEdgeToEdge', 'false'));
             var subheaderStyle = resolveSubheaderStyle(config, viz);
             var annotationField = String(opt('annotationField', 'annotation') || '').trim();
@@ -1220,6 +1253,7 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             var root = document.createElement('div');
             root.className = 'bgdhamp-sparkline-value-viz';
             root.setAttribute('data-bgdhamp-viz-build', VIZ_BUILD);
+            root.setAttribute('data-bgdhamp-headline-layout', headlineIsInline ? 'inline' : 'stacked');
             root.setAttribute('data-bgdhamp-spark-area', showSparkArea ? 'on' : 'off');
             root.setAttribute('data-bgdhamp-frame-subheader', String(SUBHEADER_HEIGHT_PX));
             root.setAttribute('data-ss-frame-body', String(BODY_FRAME_HEIGHT_PX));
@@ -1271,17 +1305,11 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             headlineRow.className =
                 'bgdhamp-sparkline-value-viz__headlineRow bgdhamp-sparkline-value-viz__headlineRow--' +
                 (headlineIsInline ? 'inline' : 'stacked');
-            headlineRow.style.display = 'flex';
-            headlineRow.style.flexDirection = headlineIsInline ? 'row' : 'column';
-            headlineRow.style.flexWrap = headlineIsInline ? 'wrap' : 'nowrap';
-            headlineRow.style.alignItems = headlineIsInline ? 'baseline' : 'center';
-            headlineRow.style.justifyContent = 'center';
-            headlineRow.style.gap = headlineIsInline ? '16px' : '8px';
-            headlineRow.style.width = '100%';
-            headlineRow.style.textAlign = 'center';
+            applyHeadlineRowLayout(headlineRow, headlineIsInline);
 
             var major = document.createElement('div');
             major.className = 'bgdhamp-sparkline-value-viz__major';
+            shrinkToContent(major);
             var majorVal = document.createElement('div');
             majorVal.className = 'bgdhamp-sparkline-value-viz__majorValue';
             majorVal.textContent = formatMajor(last, precision, unit);
@@ -1295,6 +1323,7 @@ define(['api/SplunkVisualizationBase'], function (SplunkVisualizationBase) {
             if (showDelta) {
                 var trend = document.createElement('div');
                 trend.className = 'bgdhamp-sparkline-value-viz__trend';
+                shrinkToContent(trend);
                 var deltaVal = document.createElement('div');
                 deltaVal.className = 'bgdhamp-sparkline-value-viz__trendValue';
                 deltaVal.textContent = formatDelta(delta, last, deltaMode, precision);
