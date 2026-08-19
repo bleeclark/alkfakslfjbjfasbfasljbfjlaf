@@ -135,33 +135,6 @@
     overflow: visible;
 }
 
-.bgdhamp-sparkline-value-viz__hoverOverlay {
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    z-index: 2;
-}
-
-.bgdhamp-sparkline-value-viz__hoverLine {
-    position: absolute;
-    width: 1px;
-    margin-left: -0.5px;
-    background: rgba(255, 255, 255, 0.35);
-}
-
-.bgdhamp-sparkline-value-viz__hoverDot {
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    margin: 0;
-    border-radius: 50%;
-    border: 1px solid rgba(0, 0, 0, 0.35);
-    box-sizing: border-box;
-}
-
 .bgdhamp-sparkline-value-viz__indicatorLabel {
     font-size: 13px;
     font-weight: 700;
